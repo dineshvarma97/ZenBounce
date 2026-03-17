@@ -1,0 +1,123 @@
+name: Build ZenBounce APK
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:   # allows manual trigger from the GitHub UI
+
+jobs:
+  test-and-build:
+    name: Run Tests & Build Debug APK
+    runs-on: ubuntu-latest   # free GitHub-hosted runner with Android SDK pre-installed
+
+    steps:
+      # ── 1. Checkout ────────────────────────────────────────────────────────
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      # ── 2. JDK 17 ─────────────────────────────────────────────────────────
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'   # Eclipse Temurin — free, fast
+
+      # ── 3. Gradle cache (saves ~1-2 min per build) ─────────────────────────
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ hashFiles('**/*.gradle.kts', '**/libs.versions.toml') }}
+          restore-keys: gradle-
+
+      # ── 4. Make gradlew executable ─────────────────────────────────────────
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      # ── 5. Unit Tests (PhysicsEngineTest etc.) ────────────────────────────
+      - name: Run unit tests
+        run: ./gradlew test --stacktrace
+
+      # ── 6. Publish test results ───────────────────────────────────────────
+      - name: Publish test report
+        uses: mikepenz/action-junit-report@v4
+        if: always()   # run even if tests fail
+        with:
+          report_paths: '**/build/test-results/test*/TEST-*.xml'
+
+      # ── 7. Build debug APK ────────────────────────────────────────────────
+      - name: Build debug APK
+        run: ./gradlew assembleDebug --stacktrace
+
+      # ── 8. Upload APK as artifact (downloadable from Actions tab) ─────────
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZenBounce-debug-${{ github.run_number }}
+          path: app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 14   # keep artifact for 14 days
+
+  # ── Optional: signed release build (only on main branch) ─────────────────
+  build-release:
+    name: Build Signed Release APK
+    runs-on: ubuntu-latest
+    needs: test-and-build          # only runs if tests pass
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ hashFiles('**/*.gradle.kts', '**/libs.versions.toml') }}
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      # Decode signing keystore from GitHub Secret (base64 encoded)
+      - name: Decode keystore
+        if: ${{ env.KEYSTORE_BASE64 != '' }}
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: echo "$KEYSTORE_BASE64" | base64 --decode > app/release.keystore
+
+      # Build signed release APK using secrets stored in GitHub repo settings
+      - name: Build release APK
+        if: ${{ env.KEYSTORE_BASE64 != '' }}
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+        run: |
+          ./gradlew assembleRelease \
+            -Pandroid.injected.signing.store.file=release.keystore \
+            -Pandroid.injected.signing.store.password=$STORE_PASSWORD \
+            -Pandroid.injected.signing.key.alias=$KEY_ALIAS \
+            -Pandroid.injected.signing.key.password=$KEY_PASSWORD \
+            --stacktrace
+
+      - name: Upload signed release APK
+        if: ${{ env.KEYSTORE_BASE64 != '' }}
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZenBounce-release-${{ github.run_number }}
+          path: app/build/outputs/apk/release/app-release.apk
+          retention-days: 30

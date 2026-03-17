@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">ZenBounce</string>
+    <string name="theme_picker_title">Choose Your Vibe</string>
+    <string name="theme_preview_label">Preview</string>
+</resources>

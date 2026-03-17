@@ -1,0 +1,23 @@
+# Local Android build outputs — never commit these
+/build
+app/build
+app/release.keystore
+
+# Gradle caches
+.gradle/
+local.properties
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+
+# Signing artifacts — NEVER commit keystores or secrets
+*.jks
+*.keystore
+key.properties
