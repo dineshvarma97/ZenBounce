@@ -24,11 +24,11 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      # ── 3. Setup Gradle 8.7 (downloads Gradle, no wrapper JAR needed) ─────
+      # ── 3. Setup Gradle 8.9 (AGP 8.7.0 requires Gradle >= 8.9) ────────────
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.7'
+          gradle-version: '8.9'
 
       # ── 4. Gradle dependency cache ────────────────────────────────────────
       - name: Cache Gradle dependencies
