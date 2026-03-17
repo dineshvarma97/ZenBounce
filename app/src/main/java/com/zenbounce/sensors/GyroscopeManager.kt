@@ -25,7 +25,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
  *
  * Mapping to Compose Canvas screen coordinates (y increases downward):
  *   gravityX =  raw.x   (tilt right → ball rolls right ✓)
- *   gravityY = -raw.y   (tilt toward user raises +Y sensor → ball falls down ✓)
+ *   gravityY =  raw.y   (sensor +Y = upward reaction force = ball falls down in canvas ✓)
  */
 class GyroscopeManager(private val context: Context) {
 
@@ -74,7 +74,7 @@ class GyroscopeManager(private val context: Context) {
 
                 // Map to canvas coordinates (see class KDoc) and scale
                 val gx = smoothX * gravityScale
-                val gy = -smoothY * gravityScale
+                val gy = smoothY * gravityScale
 
                 trySend(GravityVector(gx, gy))
             }
