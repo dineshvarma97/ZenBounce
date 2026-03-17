@@ -73,7 +73,8 @@ class GyroscopeManager(private val context: Context) {
                 smoothY = alpha * rawY + (1f - alpha) * smoothY
 
                 // Map to canvas coordinates (see class KDoc) and scale
-                val gx = smoothX * gravityScale
+                // X is negated: sensor +X = tilt right, but canvas +X = right (they oppose each other)
+                val gx = -smoothX * gravityScale
                 val gy = smoothY * gravityScale
 
                 trySend(GravityVector(gx, gy))
