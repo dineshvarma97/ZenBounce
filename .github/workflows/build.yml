@@ -1,11 +1,7 @@
 name: Build ZenBounce APK
 
 on:
-  push:
-    branches: [ main, master, develop ]
-  pull_request:
-    branches: [ main, master ]
-  workflow_dispatch:   # allows manual trigger from the GitHub UI
+  workflow_dispatch:   # CI disabled — build APK locally; trigger manually from GitHub UI if needed
 
 jobs:
   test-and-build:
