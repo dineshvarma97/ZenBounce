@@ -177,10 +177,38 @@ class GameViewModel(
 
     // ---- Lifecycle ----------------------------------------------------------
 
+    /**
+     * True when the game was actively [Playing] at the moment the app went to
+     * background.  Used by [onLifecycleResume] to decide whether to auto-resume.
+     */
+    private var wasPlayingBeforeBackground = false
+
+    /**
+     * Called by the lifecycle observer when the app goes to background (ON_PAUSE).
+     * Records the current play-state so we can restore it correctly on return.
+     */
+    fun onLifecyclePause() {
+        wasPlayingBeforeBackground = _gameState.value?.status == GameState.Status.Playing
+        _gameState.update { it?.copy(status = GameState.Status.Paused) }
+    }
+
+    /**
+     * Called by the lifecycle observer when the app returns to foreground (ON_RESUME).
+     * Only auto-resumes if the game was playing when we left — a user-initiated pause
+     * (e.g. tapping the screen) is preserved across background/foreground cycles.
+     */
+    fun onLifecycleResume() {
+        if (wasPlayingBeforeBackground) {
+            _gameState.update { it?.copy(status = GameState.Status.Playing) }
+        }
+    }
+
+    /** Pause triggered by an explicit user action (tap-to-pause). */
     fun pauseGame() {
         _gameState.update { it?.copy(status = GameState.Status.Paused) }
     }
 
+    /** Resume triggered by an explicit user action (tap-to-resume). */
     fun resumeGame() {
         _gameState.update { it?.copy(status = GameState.Status.Playing) }
     }

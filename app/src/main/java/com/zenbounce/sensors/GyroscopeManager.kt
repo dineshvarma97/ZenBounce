@@ -34,7 +34,7 @@ class GyroscopeManager(private val context: Context) {
      * At ~9.8 m/s² full gravity, the ball accelerates at 9.8 * SCALE px/s².
      * Tune this to adjust responsiveness.
      */
-    private val gravityScale = 320f
+    private val gravityScale = 960f
 
     /** Low-pass filter smoothing factor — closer to 1 = more smoothing, slower response. */
     private val alpha = 0.12f
