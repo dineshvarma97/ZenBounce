@@ -1,6 +1,6 @@
 package com.zenbounce.ui.screens
 
-import androidx.compose.animation.core.withFrameMillis
+import androidx.compose.runtime.withFrameMillis
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -38,6 +38,21 @@ import com.zenbounce.ui.components.BallCanvas
 import com.zenbounce.ui.components.FlashState
 import com.zenbounce.ui.components.TRAIL_LENGTH
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Text
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
+import com.zenbounce.game.GameState
 
 /**
  * Full-screen game screen.
@@ -54,7 +69,8 @@ import kotlinx.coroutines.launch
 @Composable
 fun GameScreen(
     viewModel: GameViewModel,
-    theme: AppTheme
+    theme: AppTheme,
+    onMainMenu: () -> Unit
 ) {
     val gameState by viewModel.gameState.collectAsState()
 
@@ -71,6 +87,9 @@ fun GameScreen(
 
     // ---- Theme picker -------------------------------------------------------
     var showThemePicker by remember { mutableStateOf(false) }
+
+    // ---- Pause overlay ------------------------------------------------------
+    var showPauseOverlay by remember { mutableStateOf(false) }
 
     // ---- Canvas size (set via callback from BallCanvas) --------------------
     var canvasW by remember { mutableStateOf(0f) }
@@ -92,6 +111,7 @@ fun GameScreen(
 
     // ---- Main game loop (Choreographer-synced) ------------------------------
     LaunchedEffect(Unit) {
+        viewModel.resumeGame()   // ensure game is running when screen appears
         var lastFrameMs = withFrameMillis { it }
 
         while (true) {
@@ -99,23 +119,27 @@ fun GameScreen(
             val deltaMs = (frameMs - lastFrameMs).coerceAtLeast(0L)
             lastFrameMs = frameMs
 
-            // Advance physics
+            val paused = gameState?.status == GameState.Status.Paused
+
+            // Advance physics (no-op when paused)
             viewModel.tick(deltaMs)
 
-            // Update particles
-            if (canvasW > 0f && canvasH > 0f) {
-                particleState.initialise(canvasW, canvasH)
-                particleState.update(deltaMs, canvasW, canvasH)
-                particles.clear()
-                particles.addAll(particleState.particles)
-            }
-
-            // Update trail from current ball positions
-            gameState?.balls?.firstOrNull()?.let { ball ->
-                if (trailPositions.size >= TRAIL_LENGTH) {
-                    trailPositions.removeFirst()
+            if (!paused) {
+                // Update particles
+                if (canvasW > 0f && canvasH > 0f) {
+                    particleState.initialise(canvasW, canvasH)
+                    particleState.update(deltaMs, canvasW, canvasH)
+                    particles.clear()
+                    particles.addAll(particleState.particles)
                 }
-                trailPositions.add(ball.position)
+
+                // Update trail from current ball positions
+                gameState?.balls?.firstOrNull()?.let { ball ->
+                    if (trailPositions.size >= TRAIL_LENGTH) {
+                        trailPositions.removeFirst()
+                    }
+                    trailPositions.add(ball.position)
+                }
             }
         }
     }
@@ -146,6 +170,23 @@ fun GameScreen(
             }
         )
 
+        // Pause button — top-right
+        IconButton(
+            onClick = {
+                showPauseOverlay = true
+                viewModel.pauseGame()
+            },
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(top = 40.dp, end = 12.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Pause,
+                contentDescription = "Pause",
+                tint = Color.White.copy(alpha = 0.7f)
+            )
+        }
+
         // Theme picker FAB — bottom-right
         FloatingActionButton(
             onClick = { showThemePicker = true },
@@ -171,6 +212,65 @@ fun GameScreen(
                 onSelectTheme = { viewModel.selectTheme(it) },
                 onDismiss = { showThemePicker = false }
             )
+        }
+
+        // Pause overlay
+        if (showPauseOverlay) {
+            PauseOverlay(
+                onResume = {
+                    showPauseOverlay = false
+                    viewModel.resumeGame()
+                },
+                onMainMenu = onMainMenu
+            )
+        }
+    }
+}
+
+@Composable
+private fun PauseOverlay(
+    onResume: () -> Unit,
+    onMainMenu: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.75f)),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Text(
+                text = "Paused",
+                color = Color.White,
+                fontSize = 30.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(Modifier.height(8.dp))
+            Button(
+                onClick = onResume,
+                modifier = Modifier.width(200.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF00EFFF),
+                    contentColor   = Color(0xFF0A0E27)
+                )
+            ) {
+                Text("Resume", fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+            }
+            Button(
+                onClick = onMainMenu,
+                modifier = Modifier.width(200.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF1A1F3C),
+                    contentColor   = Color(0xFF00EFFF)
+                )
+            ) {
+                Text("Main Menu", fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+            }
         }
     }
 }

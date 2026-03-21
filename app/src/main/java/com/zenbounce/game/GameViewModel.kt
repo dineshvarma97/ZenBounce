@@ -9,15 +9,19 @@ import com.zenbounce.sensors.GyroscopeManager
 import com.zenbounce.theme.AppTheme
 import com.zenbounce.theme.ThemeManager
 import com.zenbounce.theme.ThemePresets
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import com.zenbounce.prefs.SensitivityManager
 
 /**
  * Central orchestrator connecting:
@@ -39,6 +43,7 @@ class GameViewModel(
     private val gyroscopeManager = GyroscopeManager(appContext)
     private val hapticManager = HapticManager(appContext)
     private val themeManager = ThemeManager(appContext)
+    private val sensitivityManager = SensitivityManager(appContext)
 
     // ---- Theme --------------------------------------------------------------
 
@@ -51,6 +56,26 @@ class GameViewModel(
 
     fun selectTheme(theme: AppTheme) {
         viewModelScope.launch { themeManager.selectTheme(theme) }
+    }
+
+    // ---- Sensitivity --------------------------------------------------------
+
+    private val _sensitivity = MutableStateFlow(SensitivityManager.DEFAULT_SENSITIVITY)
+    val sensitivity: StateFlow<Int> = _sensitivity.asStateFlow()
+
+    private var sensitivityJob: Job? = null
+
+    /**
+     * Update sensitivity immediately in-memory and debounce the DataStore write
+     * so rapid slider drags don't flood disk I/O.
+     */
+    fun setSensitivity(value: Int) {
+        _sensitivity.value = value
+        sensitivityJob?.cancel()
+        sensitivityJob = viewModelScope.launch {
+            delay(300L)
+            sensitivityManager.setSensitivity(value)
+        }
     }
 
     // ---- Collision events (for UI flash) ------------------------------------
@@ -77,6 +102,10 @@ class GameViewModel(
     private val _gravity = MutableStateFlow(GravityVector(0f, 0f))
 
     init {
+        // Restore saved sensitivity
+        viewModelScope.launch {
+            _sensitivity.value = sensitivityManager.sensitivity.first()
+        }
         // Collect sensor gravity on a coroutine scoped to the ViewModel lifetime
         viewModelScope.launch {
             gyroscopeManager.gravityFlow().collect { vector ->
@@ -118,7 +147,10 @@ class GameViewModel(
         if (state.status == GameState.Status.Paused) return
         if (canvasWidth <= 0f || canvasHeight <= 0f) return
 
-        val gravity = _gravity.value
+        // Scale gravity by sensitivity: 0=still, 50=normal (1×), 100=fast (2×)
+        val raw = _gravity.value
+        val factor = (_sensitivity.value / 50f).coerceIn(0f, 4f)
+        val gravity = GravityVector(raw.x * factor, raw.y * factor)
 
         val updatedBalls = state.balls.map { ball ->
             val result = PhysicsEngine.update(
@@ -151,6 +183,15 @@ class GameViewModel(
 
     fun resumeGame() {
         _gameState.update { it?.copy(status = GameState.Status.Playing) }
+    }
+
+    /** Reset the ball and start fresh. Safe to call before canvas size is known. */
+    fun startNewGame() {
+        if (canvasWidth > 0f && canvasHeight > 0f) {
+            _gameState.value = GameState.initial(canvasWidth, canvasHeight)
+        } else {
+            resumeGame()
+        }
     }
 }
 

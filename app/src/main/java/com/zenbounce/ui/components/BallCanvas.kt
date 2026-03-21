@@ -1,12 +1,11 @@
 package com.zenbounce.ui.components
 
+import android.graphics.BlurMaskFilter
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -15,10 +14,8 @@ import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.toArgb
-import com.zenbounce.game.Ball
 import com.zenbounce.game.GameState
 import com.zenbounce.theme.AppTheme
-import kotlin.math.roundToInt
 
 /**
  * Full-screen Canvas responsible for rendering the game world.
@@ -132,16 +129,22 @@ private fun DrawScope.drawGlowingBall(
     glowColor: Color,
     glowRadius: Float
 ) {
+    // BlurMaskFilter produces a real hardware-compatible blur halo.
+    // We paint a slightly larger circle in the glow colour using the blur mask,
+    // then the solid ball is drawn on top by the caller.
     val glowPaint = Paint().apply {
         asFrameworkPaint().apply {
             isAntiAlias = true
-            color = android.graphics.Color.TRANSPARENT
-            setShadowLayer(glowRadius, 0f, 0f, glowColor.copy(alpha = 0.8f).toArgb())
+            color = glowColor.copy(alpha = 0.75f).toArgb()
+            maskFilter = BlurMaskFilter(
+                glowRadius,
+                BlurMaskFilter.Blur.NORMAL
+            )
         }
     }
 
     drawIntoCanvas { canvas ->
-        canvas.drawCircle(center, radius + glowRadius * 0.3f, glowPaint)
+        canvas.drawCircle(center, radius, glowPaint)
     }
 }
 
