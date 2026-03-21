@@ -1,8 +1,13 @@
 package com.zenbounce.ui.screens
 
-import androidx.compose.runtime.withFrameMillis
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -12,6 +17,7 @@ import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -22,14 +28,18 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameMillis
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import com.zenbounce.game.GameState
 import com.zenbounce.game.GameViewModel
 import com.zenbounce.theme.AppTheme
 import com.zenbounce.ui.components.AmbientParticle
@@ -77,17 +87,24 @@ fun GameScreen(
     var canvasH by remember { mutableStateOf(0f) }
 
     // ---- Lifecycle pause/resume --------------------------------------------
+    // Use lifecycle-aware variants so that a user-initiated pause is NOT
+    // overridden when the app returns to the foreground.
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
-                Lifecycle.Event.ON_PAUSE  -> viewModel.pauseGame()
-                Lifecycle.Event.ON_RESUME -> viewModel.resumeGame()
+                Lifecycle.Event.ON_PAUSE  -> viewModel.onLifecyclePause()
+                Lifecycle.Event.ON_RESUME -> viewModel.onLifecycleResume()
                 else                      -> Unit
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    // ---- Back handler: dismiss ThemePicker instead of exiting the app ------
+    BackHandler(enabled = showThemePicker) {
+        showThemePicker = false
     }
 
     // ---- Main game loop (Choreographer-synced) ------------------------------
@@ -102,20 +119,25 @@ fun GameScreen(
             // Advance physics
             viewModel.tick(deltaMs)
 
-            // Update particles
-            if (canvasW > 0f && canvasH > 0f) {
-                particleState.initialise(canvasW, canvasH)
-                particleState.update(deltaMs, canvasW, canvasH)
-                particles.clear()
-                particles.addAll(particleState.particles)
-            }
+            val isPaused = gameState?.status == GameState.Status.Paused
 
-            // Update trail from current ball positions
-            gameState?.balls?.firstOrNull()?.let { ball ->
-                if (trailPositions.size >= TRAIL_LENGTH) {
-                    trailPositions.removeFirst()
+            // Only update visual elements while the game is running
+            if (!isPaused) {
+                // Update particles
+                if (canvasW > 0f && canvasH > 0f) {
+                    particleState.initialise(canvasW, canvasH)
+                    particleState.update(deltaMs, canvasW, canvasH)
+                    particles.clear()
+                    particles.addAll(particleState.particles)
                 }
-                trailPositions.add(ball.position)
+
+                // Update trail from current ball positions
+                gameState?.balls?.firstOrNull()?.let { ball ->
+                    if (trailPositions.size >= TRAIL_LENGTH) {
+                        trailPositions.removeFirst()
+                    }
+                    trailPositions.add(ball.position)
+                }
             }
         }
     }
@@ -129,6 +151,8 @@ fun GameScreen(
     }
 
     // ---- UI -----------------------------------------------------------------
+    val isPaused = gameState?.status == GameState.Status.Paused
+
     Box(modifier = Modifier.fillMaxSize()) {
 
         BallCanvas(
@@ -146,7 +170,47 @@ fun GameScreen(
             }
         )
 
-        // Theme picker FAB — bottom-right
+        // Tap-to-pause / tap-to-resume overlay (covers game area, under FAB)
+        // Disabled while the theme picker is open so the scrim handles taps there.
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .then(
+                    if (!showThemePicker) {
+                        Modifier.clickable {
+                            if (isPaused) viewModel.resumeGame() else viewModel.pauseGame()
+                        }
+                    } else Modifier
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            if (isPaused) {
+                // Dim the background and show a pause prompt
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.55f))
+                )
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = "PAUSED",
+                        color = theme.accentColor,
+                        fontSize = 36.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Tap to Resume",
+                        color = Color.White.copy(alpha = 0.7f),
+                        fontSize = 16.sp
+                    )
+                }
+            }
+        }
+
+        // Theme picker FAB — bottom-right (on top of tap overlay)
         FloatingActionButton(
             onClick = { showThemePicker = true },
             shape = CircleShape,
