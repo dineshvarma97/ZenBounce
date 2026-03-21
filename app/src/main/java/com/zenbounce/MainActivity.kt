@@ -5,23 +5,26 @@ import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.zenbounce.game.GameViewModel
 import com.zenbounce.game.GameViewModelFactory
 import com.zenbounce.ui.screens.GameScreen
+import com.zenbounce.ui.screens.MainMenuScreen
+import com.zenbounce.ui.screens.SettingsScreen
+
+enum class AppScreen { MainMenu, Game, Settings }
 
 class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Keep screen on while app is active — essential for gyroscope play
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-
-        // Edge-to-edge immersive experience
         enableEdgeToEdge()
 
         setContent {
@@ -29,11 +32,31 @@ class MainActivity : ComponentActivity() {
                 factory = GameViewModelFactory(applicationContext)
             )
             val theme by viewModel.currentTheme.collectAsState()
+            val sensitivity by viewModel.sensitivity.collectAsState()
 
-            GameScreen(
-                viewModel = viewModel,
-                theme = theme
-            )
+            var currentScreen by remember { mutableStateOf(AppScreen.MainMenu) }
+
+            when (currentScreen) {
+                AppScreen.MainMenu -> MainMenuScreen(
+                    onStart = {
+                        viewModel.startNewGame()
+                        currentScreen = AppScreen.Game
+                    },
+                    onSettings = { currentScreen = AppScreen.Settings },
+                    onExit = { finish() }
+                )
+                AppScreen.Game -> GameScreen(
+                    viewModel = viewModel,
+                    theme = theme,
+                    onMainMenu = { currentScreen = AppScreen.MainMenu }
+                )
+                AppScreen.Settings -> SettingsScreen(
+                    sensitivity = sensitivity,
+                    onSensitivityChange = { viewModel.setSensitivity(it) },
+                    onBack = { currentScreen = AppScreen.MainMenu }
+                )
+            }
         }
     }
 }
+
