@@ -48,7 +48,7 @@ fun SettingsScreen(
             )
             .padding(horizontal = 24.dp)
     ) {
-        // ── Header ────────────────────────────────────────────────────
+        // ── Header ────────────────────────────────────────
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.padding(top = 24.dp)
