@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.sp
 fun MainMenuScreen(
     onStart: () -> Unit,
     onSettings: () -> Unit,
+    onBalls: () -> Unit,
     onExit: () -> Unit
 ) {
     Box(
@@ -60,6 +61,7 @@ fun MainMenuScreen(
             Spacer(Modifier.height(32.dp))
 
             MenuButton(text = "Start",    onClick = onStart,    primary = true)
+            MenuButton(text = "Balls",    onClick = onBalls,    primary = false)
             MenuButton(text = "Settings", onClick = onSettings, primary = false)
             MenuButton(text = "Exit",     onClick = onExit,     primary = false)
         }

@@ -2,7 +2,6 @@ package com.zenbounce.ui.screens
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -16,7 +15,9 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -41,6 +42,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.zenbounce.game.GameState
 import com.zenbounce.game.GameViewModel
+import com.zenbounce.objects.BounceObjectCatalog
 import com.zenbounce.theme.AppTheme
 import com.zenbounce.ui.components.AmbientParticle
 import com.zenbounce.ui.components.AmbientParticleState
@@ -73,6 +75,7 @@ fun GameScreen(
     onMainMenu: () -> Unit
 ) {
     val gameState by viewModel.gameState.collectAsState()
+    val currentObject by viewModel.currentObject.collectAsState()
 
     // ---- Trail ring-buffer --------------------------------------------------
     val trailPositions = remember { mutableStateListOf<Offset>() }
@@ -87,9 +90,6 @@ fun GameScreen(
 
     // ---- Theme picker -------------------------------------------------------
     var showThemePicker by remember { mutableStateOf(false) }
-
-    // ---- Pause overlay ------------------------------------------------------
-    var showPauseOverlay by remember { mutableStateOf(false) }
 
     // ---- Canvas size (set via callback from BallCanvas) --------------------
     var canvasW by remember { mutableStateOf(0f) }
@@ -111,9 +111,16 @@ fun GameScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    // ---- Back handler: dismiss ThemePicker instead of exiting the app ------
+    val isPaused = gameState?.status == GameState.Status.Paused
+
+    // ---- Back handlers ------------------------------------------------------
+    // Priority 1: dismiss ThemePicker overlay
     BackHandler(enabled = showThemePicker) {
         showThemePicker = false
+    }
+    // Priority 2: back while playing → pause; back while paused → resume
+    BackHandler(enabled = !showThemePicker) {
+        if (isPaused) viewModel.resumeGame() else viewModel.pauseGame()
     }
 
     // ---- Main game loop (Choreographer-synced) ------------------------------
@@ -154,6 +161,11 @@ fun GameScreen(
         }
     }
 
+    // ---- Clear trail when object changes ------------------------------------
+    LaunchedEffect(currentObject.id) {
+        trailPositions.clear()
+    }
+
     // ---- Flash trigger on collision ----------------------------------------
     LaunchedEffect(viewModel) {
         viewModel.collisionEvents.collect {
@@ -163,13 +175,12 @@ fun GameScreen(
     }
 
     // ---- UI -----------------------------------------------------------------
-    val isPaused = gameState?.status == GameState.Status.Paused
-
     Box(modifier = Modifier.fillMaxSize()) {
 
         BallCanvas(
             gameState = gameState,
             theme = theme,
+            currentObject = currentObject,
             trailPositions = trailPositions.toList(),
             flashAlpha = flashState.alpha.value,
             particles = particles.toList(),
@@ -182,43 +193,21 @@ fun GameScreen(
             }
         )
 
-        // Tap-to-pause / tap-to-resume overlay (covers game area, under FAB)
-        // Disabled while the theme picker is open so the scrim handles taps there.
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .then(
-                    if (!showThemePicker) {
-                        Modifier.clickable {
-                            if (isPaused) viewModel.resumeGame() else viewModel.pauseGame()
-                        }
-                    } else Modifier
-                ),
-            contentAlignment = Alignment.Center
-        ) {
-            if (isPaused) {
-                // Dim the background and show a pause prompt
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.55f))
+        // Pause button — top-right corner, visible only while the game is actively running
+        if (!isPaused && !showThemePicker) {
+            IconButton(
+                onClick = { viewModel.pauseGame() },
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(16.dp)
+                    .size(48.dp)
+                    .background(Color.White.copy(alpha = 0.15f), CircleShape)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Pause,
+                    contentDescription = "Pause game",
+                    tint = Color.White
                 )
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        text = "PAUSED",
-                        color = theme.accentColor,
-                        fontSize = 36.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "Tap to Resume",
-                        color = Color.White.copy(alpha = 0.7f),
-                        fontSize = 16.sp
-                    )
-                }
             }
         }
 
@@ -249,13 +238,10 @@ fun GameScreen(
             )
         }
 
-        // Pause overlay
-        if (showPauseOverlay) {
+        // Pause overlay — shown whenever the game is paused (button, back press, or lifecycle)
+        if (isPaused) {
             PauseOverlay(
-                onResume = {
-                    showPauseOverlay = false
-                    viewModel.resumeGame()
-                },
+                onResume = { viewModel.resumeGame() },
                 onMainMenu = onMainMenu
             )
         }

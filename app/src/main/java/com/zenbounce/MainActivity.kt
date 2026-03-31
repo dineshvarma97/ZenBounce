@@ -13,11 +13,12 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.zenbounce.game.GameViewModel
 import com.zenbounce.game.GameViewModelFactory
+import com.zenbounce.ui.screens.BallPickerScreen
 import com.zenbounce.ui.screens.GameScreen
 import com.zenbounce.ui.screens.MainMenuScreen
 import com.zenbounce.ui.screens.SettingsScreen
 
-enum class AppScreen { MainMenu, Game, Settings }
+enum class AppScreen { MainMenu, Game, Settings, BallPicker }
 
 class MainActivity : ComponentActivity() {
 
@@ -33,6 +34,7 @@ class MainActivity : ComponentActivity() {
             )
             val theme by viewModel.currentTheme.collectAsState()
             val sensitivity by viewModel.sensitivity.collectAsState()
+            val currentObject by viewModel.currentObject.collectAsState()
 
             var currentScreen by remember { mutableStateOf(AppScreen.MainMenu) }
 
@@ -43,6 +45,7 @@ class MainActivity : ComponentActivity() {
                         currentScreen = AppScreen.Game
                     },
                     onSettings = { currentScreen = AppScreen.Settings },
+                    onBalls = { currentScreen = AppScreen.BallPicker },
                     onExit = { finish() }
                 )
                 AppScreen.Game -> GameScreen(
@@ -53,6 +56,14 @@ class MainActivity : ComponentActivity() {
                 AppScreen.Settings -> SettingsScreen(
                     sensitivity = sensitivity,
                     onSensitivityChange = { viewModel.setSensitivity(it) },
+                    onBack = { currentScreen = AppScreen.MainMenu }
+                )
+                AppScreen.BallPicker -> BallPickerScreen(
+                    currentObjectId = currentObject.id,
+                    onSelectObject = { obj ->
+                        viewModel.selectObject(obj)
+                        currentScreen = AppScreen.MainMenu
+                    },
                     onBack = { currentScreen = AppScreen.MainMenu }
                 )
             }

@@ -42,35 +42,42 @@ data class PhysicsResult(val ball: Ball, val collision: CollisionInfo?)
  */
 object PhysicsEngine {
 
-    /** Restitution coefficient (1.0 = perfectly elastic, 0.0 = completely inelastic). */
+    /** Default restitution coefficient (1.0 = perfectly elastic, 0.0 = completely inelastic). */
     const val RESTITUTION = 0.75f
 
-    /** Velocity damping applied every frame (simulates air resistance). */
+    /** Default velocity damping applied every frame (simulates air resistance). */
     const val AIR_DAMPING = 0.995f
 
     /**
      * Advance the simulation by [deltaMs] milliseconds.
      *
-     * @param ball      Current ball state
-     * @param gravity   Gravity vector in pixels/s² (already scaled from sensor m/s²)
-     * @param deltaMs   Frame delta in milliseconds; clamped to [MAX_DELTA_MS] to prevent
-     *                  tunnelling after the app is resumed from background
-     * @param boundsW   Width of the playfield in pixels (from canvas size)
-     * @param boundsH   Height of the playfield in pixels
+     * Per-object physics can be supplied via [restitution] and [airDamping].
+     * Defaults match the legacy constants so existing callers are unaffected.
+     *
+     * @param ball        Current ball state
+     * @param gravity     Gravity vector in pixels/s² (already scaled from sensor m/s²)
+     * @param deltaMs     Frame delta in milliseconds; clamped to [MAX_DELTA_MS] to prevent
+     *                    tunnelling after the app is resumed from background
+     * @param boundsW     Width of the playfield in pixels (from canvas size)
+     * @param boundsH     Height of the playfield in pixels
+     * @param restitution Bounce elasticity for this object (0..1); defaults to [RESTITUTION]
+     * @param airDamping  Per-frame velocity multiplier for this object (0..1); defaults to [AIR_DAMPING]
      */
     fun update(
         ball: Ball,
         gravity: GravityVector,
         deltaMs: Long,
         boundsW: Float,
-        boundsH: Float
+        boundsH: Float,
+        restitution: Float = RESTITUTION,
+        airDamping: Float = AIR_DAMPING
     ): PhysicsResult {
         // Cap delta to avoid tunnelling on resume
         val dt = minOf(deltaMs, MAX_DELTA_MS) / 1000f   // seconds
 
         // --- Integrate velocity ---
-        val vx = (ball.velocity.x + gravity.x * dt) * AIR_DAMPING
-        val vy = (ball.velocity.y + gravity.y * dt) * AIR_DAMPING
+        val vx = (ball.velocity.x + gravity.x * dt) * airDamping
+        val vy = (ball.velocity.y + gravity.y * dt) * airDamping
 
         // --- Integrate position ---
         var newX = ball.position.x + vx * dt
@@ -90,28 +97,28 @@ object PhysicsEngine {
             newX = r
             if (finalVx < 0f) {
                 collisionSpeed = maxOf(collisionSpeed, -finalVx)
-                finalVx = -finalVx * RESTITUTION
+                finalVx = -finalVx * restitution
             }
         }
         if (newX + r > boundsW) {
             newX = boundsW - r
             if (finalVx > 0f) {
                 collisionSpeed = maxOf(collisionSpeed, finalVx)
-                finalVx = -finalVx * RESTITUTION
+                finalVx = -finalVx * restitution
             }
         }
         if (newY - r < 0f) {
             newY = r
             if (finalVy < 0f) {
                 collisionSpeed = maxOf(collisionSpeed, -finalVy)
-                finalVy = -finalVy * RESTITUTION
+                finalVy = -finalVy * restitution
             }
         }
         if (newY + r > boundsH) {
             newY = boundsH - r
             if (finalVy > 0f) {
                 collisionSpeed = maxOf(collisionSpeed, finalVy)
-                finalVy = -finalVy * RESTITUTION
+                finalVy = -finalVy * restitution
             }
         }
 

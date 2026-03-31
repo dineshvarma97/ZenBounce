@@ -5,7 +5,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.zenbounce.haptics.HapticManager
+import com.zenbounce.objects.BounceObject
+import com.zenbounce.objects.BounceObjectCatalog
+import com.zenbounce.objects.BounceObjectManager
 import com.zenbounce.sensors.GyroscopeManager
+import com.zenbounce.sound.SoundManager
 import com.zenbounce.theme.AppTheme
 import com.zenbounce.theme.ThemeManager
 import com.zenbounce.theme.ThemePresets
@@ -44,6 +48,8 @@ class GameViewModel(
     private val hapticManager = HapticManager(appContext)
     private val themeManager = ThemeManager(appContext)
     private val sensitivityManager = SensitivityManager(appContext)
+    private val objectManager = BounceObjectManager(appContext)
+    private val soundManager = SoundManager(appContext)
 
     // ---- Theme --------------------------------------------------------------
 
@@ -78,6 +84,26 @@ class GameViewModel(
         }
     }
 
+    // ---- Bounce Object ------------------------------------------------------
+
+    private val _currentObject = MutableStateFlow<BounceObject>(BounceObjectCatalog.DEFAULT)
+
+    /** The currently active bounce object, updated immediately and persisted to DataStore. */
+    val currentObject: StateFlow<BounceObject> = _currentObject.asStateFlow()
+
+    /**
+     * Switch to [obj] immediately (instant physics + visual change) and persist
+     * the choice to DataStore in the background.
+     */
+    fun selectObject(obj: BounceObject) {
+        _currentObject.value = obj
+        // Update radius on all existing balls so physics and rendering stay in sync
+        _gameState.update { state ->
+            state?.copy(balls = state.balls.map { it.copy(radius = obj.visuals.radius) })
+        }
+        viewModelScope.launch { objectManager.selectObject(obj) }
+    }
+
     // ---- Collision events (for UI flash) ------------------------------------
 
     private val _collisionEvents = Channel<Float>(capacity = Channel.UNLIMITED)
@@ -106,12 +132,19 @@ class GameViewModel(
         viewModelScope.launch {
             _sensitivity.value = sensitivityManager.sensitivity.first()
         }
+        // Restore saved object selection
+        viewModelScope.launch {
+            val savedObj = objectManager.currentObject.first()
+            _currentObject.value = savedObj
+        }
         // Collect sensor gravity on a coroutine scoped to the ViewModel lifetime
         viewModelScope.launch {
             gyroscopeManager.gravityFlow().collect { vector ->
                 _gravity.value = vector
             }
         }
+        // Pre-load all object collision sounds (only those with a resource ID assigned)
+        soundManager.preload(BounceObjectCatalog.ALL.mapNotNull { it.soundResId })
     }
 
     // ---- Canvas size --------------------------------------------------------
@@ -130,8 +163,8 @@ class GameViewModel(
         canvasWidth = width
         canvasHeight = height
 
-        // Initialise or reset ball when size is known
-        _gameState.value = GameState.initial(width, height)
+        // Initialise or reset ball when size is known, using the current object's radius
+        _gameState.value = GameState.initial(width, height, ballRadius = _currentObject.value.visuals.radius)
     }
 
     // ---- Game Loop ----------------------------------------------------------
@@ -147,10 +180,17 @@ class GameViewModel(
         if (state.status == GameState.Status.Paused) return
         if (canvasWidth <= 0f || canvasHeight <= 0f) return
 
-        // Scale gravity by sensitivity: 0=still, 50=normal (1×), 100=fast (2×)
+        val obj = _currentObject.value
+
+        // Scale gravity by sensitivity (0=still, 50=normal 1×, 100=fast 2×)
+        // then divide by mass so heavier objects respond more sluggishly
         val raw = _gravity.value
-        val factor = (_sensitivity.value / 50f).coerceIn(0f, 4f)
-        val gravity = GravityVector(raw.x * factor, raw.y * factor)
+        val sensitivityFactor = (_sensitivity.value / 50f).coerceIn(0f, 4f)
+        val massFactor = 1f / obj.physics.mass
+        val gravity = GravityVector(
+            raw.x * sensitivityFactor * massFactor,
+            raw.y * sensitivityFactor * massFactor
+        )
 
         val updatedBalls = state.balls.map { ball ->
             val result = PhysicsEngine.update(
@@ -158,15 +198,17 @@ class GameViewModel(
                 gravity = gravity,
                 deltaMs = deltaMs,
                 boundsW = canvasWidth,
-                boundsH = canvasHeight
+                boundsH = canvasHeight,
+                restitution = obj.physics.restitution,
+                airDamping = obj.physics.airDamping
             )
 
-            // Fire haptic on collision (non-blocking, uses internal cooldown)
             result.collision?.let { info ->
                 viewModelScope.launch {
                     hapticManager.vibrate(info.speed)
                 }
                 _collisionEvents.trySend(info.speed)
+                soundManager.playCollisionSound(obj.soundResId, info.speed)
             }
 
             result.ball
@@ -194,13 +236,11 @@ class GameViewModel(
 
     /**
      * Called by the lifecycle observer when the app returns to foreground (ON_RESUME).
-     * Only auto-resumes if the game was playing when we left — a user-initiated pause
-     * (e.g. tapping the screen) is preserved across background/foreground cycles.
+     * The game intentionally stays paused so the PauseOverlay is presented and the
+     * user can explicitly tap Resume rather than having the game snap back immediately.
      */
     fun onLifecycleResume() {
-        if (wasPlayingBeforeBackground) {
-            _gameState.update { it?.copy(status = GameState.Status.Playing) }
-        }
+        // No-op: game remains paused; user resumes via the PauseOverlay.
     }
 
     /** Pause triggered by an explicit user action (tap-to-pause). */
@@ -216,10 +256,17 @@ class GameViewModel(
     /** Reset the ball and start fresh. Safe to call before canvas size is known. */
     fun startNewGame() {
         if (canvasWidth > 0f && canvasHeight > 0f) {
-            _gameState.value = GameState.initial(canvasWidth, canvasHeight)
+            _gameState.value = GameState.initial(canvasWidth, canvasHeight, ballRadius = _currentObject.value.visuals.radius)
         } else {
             resumeGame()
         }
+    }
+
+    // ---- Lifecycle cleanup --------------------------------------------------
+
+    override fun onCleared() {
+        super.onCleared()
+        soundManager.release()
     }
 }
 

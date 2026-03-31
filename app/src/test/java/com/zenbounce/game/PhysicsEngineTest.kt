@@ -172,4 +172,63 @@ class PhysicsEngineTest {
             assertTrue("y should be <= H-radius", ball.position.y <= H - RADIUS)
         }
     }
+
+    // ---- Per-object physics parameters --------------------------------------
+
+    @Test
+    fun `custom restitution is applied instead of default`() {
+        val highBounce = 0.95f
+        val ball = makeBall(x = W - RADIUS - 1f, vx = 500f)
+        val result = PhysicsEngine.update(ball, noGravity(), DELTA_MS, W, H, restitution = highBounce)
+
+        // Reflected speed should approximate input speed × highBounce
+        val expected = 500f * highBounce
+        assertEquals("High restitution should be used", expected, -result.ball.velocity.x, 30f)
+    }
+
+    @Test
+    fun `low restitution produces nearly zero bounce`() {
+        val deadBounce = 0.10f
+        val ball = makeBall(x = W - RADIUS - 1f, vx = 500f)
+        val result = PhysicsEngine.update(ball, noGravity(), DELTA_MS, W, H, restitution = deadBounce)
+
+        assertTrue(
+            "Very low restitution should result in nearly no reflected speed",
+            -result.ball.velocity.x < 100f
+        )
+    }
+
+    @Test
+    fun `heavy object (high mass factor applied externally) moves slower than light object`() {
+        // Simulate the ViewModel applying massFactor before calling update:
+        //   gravity_effective = gravity_raw * (1 / mass)
+        val rawGravity = GravityVector(0f, 960f)
+        val pingPongMass = 0.27f  // lighter  → gets more effective gravity
+        val footballMass  = 4.5f  // heavier → gets less effective gravity
+
+        val gravityPingPong = GravityVector(rawGravity.x / pingPongMass, rawGravity.y / pingPongMass)
+        val gravityFootball  = GravityVector(rawGravity.x / footballMass,  rawGravity.y / footballMass)
+
+        val startBall = makeBall(vy = 0f)
+        val ppResult  = PhysicsEngine.update(startBall, gravityPingPong, DELTA_MS, W, H)
+        val fbResult  = PhysicsEngine.update(startBall, gravityFootball, DELTA_MS, W, H)
+
+        assertTrue(
+            "Ping pong (light) should accelerate faster than football (heavy)",
+            ppResult.ball.velocity.y > fbResult.ball.velocity.y
+        )
+    }
+
+    @Test
+    fun `custom airDamping reduces velocity more aggressively than default`() {
+        val highDamping = 0.50f  // much stronger air resistance
+        val ball = makeBall(vx = 1000f)
+        val resultDefault = PhysicsEngine.update(ball, noGravity(), DELTA_MS, W, H)
+        val resultDamped  = PhysicsEngine.update(ball, noGravity(), DELTA_MS, W, H, airDamping = highDamping)
+
+        assertTrue(
+            "Custom high damping should produce lower speed than default damping",
+            resultDamped.ball.velocity.x < resultDefault.ball.velocity.x
+        )
+    }
 }
