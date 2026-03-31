@@ -47,4 +47,3 @@ class HapticManager(context: Context) {
     /** Minimum time between haptic pulses to prevent buzzing on rapid bounces. */
     private val COOLDOWN_MS = 50L
 }
-
